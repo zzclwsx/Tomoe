@@ -24,7 +24,13 @@ enum PluginUpdateAvailability { unknown, notInCatalog, latest, updatable }
 
 enum PluginCatalogItemStatus { install, installed, update }
 
-enum PluginUpdateResult { updated, requiresNewerClient, failed, notNewer }
+enum PluginUpdateResult {
+  updated,
+  requiresNewerClient,
+  failed,
+  notNewer,
+  deferred,
+}
 
 class PluginBatchUpdateResult {
   const PluginBatchUpdateResult({
@@ -33,6 +39,7 @@ class PluginBatchUpdateResult {
     required this.requiresNewerClient,
     required this.failed,
     required this.notNewer,
+    this.deferred = 0,
   });
 
   final int candidates;
@@ -40,6 +47,7 @@ class PluginBatchUpdateResult {
   final int requiresNewerClient;
   final int failed;
   final int notNewer;
+  final int deferred;
 
   bool get hasNoCandidates => candidates == 0;
 }
@@ -47,11 +55,8 @@ class PluginBatchUpdateResult {
 typedef PluginCatalogLoader = Future<List<PluginHTTPItem>> Function();
 typedef PluginLoader = Future<Plugin> Function(String name);
 typedef PluginJsonWriter = Future<void> Function(String jsonData);
-typedef PluginErrorReporter = void Function(
-  String message,
-  Object error,
-  StackTrace stackTrace,
-);
+typedef PluginErrorReporter =
+    void Function(String message, Object error, StackTrace stackTrace);
 typedef _PluginUpdateAttempt = ({PluginUpdateResult result, Plugin? plugin});
 
 void _defaultPluginErrorReporter(
@@ -68,15 +73,18 @@ abstract class _PluginsController with Store {
     PluginLoader? pluginLoader,
     PluginJsonWriter? pluginJsonWriter,
     PluginErrorReporter? errorReporter,
-  })  : _catalogLoader = catalogLoader ?? PluginCatalogApi.getPluginList,
-        _pluginLoader = pluginLoader ?? PluginCatalogApi.getPlugin,
-        _pluginJsonWriter = pluginJsonWriter,
-        _errorReporter = errorReporter ?? _defaultPluginErrorReporter;
+    bool Function()? shouldDeferRemoteUpdates,
+  }) : _catalogLoader = catalogLoader ?? PluginCatalogApi.getPluginList,
+       _pluginLoader = pluginLoader ?? PluginCatalogApi.getPlugin,
+       _pluginJsonWriter = pluginJsonWriter,
+       _errorReporter = errorReporter ?? _defaultPluginErrorReporter,
+       _shouldDeferRemoteUpdates = shouldDeferRemoteUpdates ?? (() => false);
 
   final PluginCatalogLoader _catalogLoader;
   final PluginLoader _pluginLoader;
   final PluginJsonWriter? _pluginJsonWriter;
   final PluginErrorReporter _errorReporter;
+  final bool Function() _shouldDeferRemoteUpdates;
   final AsyncSingleFlight<List<PluginHTTPItem>> _catalogRefreshSingleFlight =
       AsyncSingleFlight<List<PluginHTTPItem>>();
   final AsyncSerialQueue _mutations = AsyncSerialQueue();
@@ -167,8 +175,10 @@ abstract class _PluginsController with Store {
   Future<void> copyPluginsToExternalDirectory() async {
     final assetManifest = await AssetManifest.loadFromAssetBundle(rootBundle);
     final assets = assetManifest.listAssets();
-    final jsonFiles = assets.where((String asset) =>
-        asset.startsWith('assets/plugins/') && asset.endsWith('.json'));
+    final jsonFiles = assets.where(
+      (String asset) =>
+          asset.startsWith('assets/plugins/') && asset.endsWith('.json'),
+    );
 
     for (var filePath in jsonFiles) {
       final jsonString = await rootBundle.loadString(filePath);
@@ -177,7 +187,8 @@ abstract class _PluginsController with Store {
     }
     await _savePlugins();
     KazumiLogger().i(
-        'Plugin: ${jsonFiles.length} plugin files copied to ${newPluginDirectory!.path}');
+      'Plugin: ${jsonFiles.length} plugin files copied to ${newPluginDirectory!.path}',
+    );
   }
 
   List<dynamic> _pluginListToJson() {
@@ -233,10 +244,7 @@ abstract class _PluginsController with Store {
     required String errorMessage,
   }) {
     return _mutations.run(
-      () => _mutateAndPersistNow(
-        mutate,
-        errorMessage: errorMessage,
-      ),
+      () => _mutateAndPersistNow(mutate, errorMessage: errorMessage),
     );
   }
 
@@ -266,14 +274,11 @@ abstract class _PluginsController with Store {
   }
 
   Future<void> updatePlugins(Iterable<Plugin> plugins) {
-    return _mutateAndPersist(
-      () {
-        for (final plugin in plugins) {
-          _replacePlugin(plugin);
-        }
-      },
-      errorMessage: 'Plugin: failed to persist imported rules',
-    );
+    return _mutateAndPersist(() {
+      for (final plugin in plugins) {
+        _replacePlugin(plugin);
+      }
+    }, errorMessage: 'Plugin: failed to persist imported rules');
   }
 
   Future<void> onReorder(int oldIndex, int newIndex) {
@@ -342,9 +347,7 @@ abstract class _PluginsController with Store {
 
   Future<List<PluginHTTPItem>> ensurePluginCatalog() {
     if (isPluginCatalogFresh) {
-      return Future.value(
-        List<PluginHTTPItem>.unmodifiable(pluginHTTPList),
-      );
+      return Future.value(List<PluginHTTPItem>.unmodifiable(pluginHTTPList));
     }
     return refreshPluginCatalog();
   }
@@ -407,6 +410,7 @@ abstract class _PluginsController with Store {
           _pluginCatalogByName[pluginNameKey(name)]?.name ?? name;
       final attempt = await _preparePluginUpdate(catalogName);
       if (attempt.result == PluginUpdateResult.updated) {
+        if (_shouldDeferRemoteUpdates()) return PluginUpdateResult.deferred;
         await _mutateAndPersistNow(
           () => _replacePlugin(attempt.plugin!),
           errorMessage:
@@ -418,6 +422,9 @@ abstract class _PluginsController with Store {
   }
 
   Future<_PluginUpdateAttempt> _preparePluginUpdate(String name) async {
+    if (_shouldDeferRemoteUpdates()) {
+      return (result: PluginUpdateResult.deferred, plugin: null);
+    }
     late final Plugin remotePlugin;
     try {
       remotePlugin = await _pluginLoader(name);
@@ -428,6 +435,9 @@ abstract class _PluginsController with Store {
         stackTrace,
       );
       return (result: PluginUpdateResult.failed, plugin: null);
+    }
+    if (_shouldDeferRemoteUpdates()) {
+      return (result: PluginUpdateResult.deferred, plugin: null);
     }
     // Validate at the injected loader boundary so production and test/custom
     // loaders follow the same integrity rule. Preserve the catalog spelling.
@@ -446,10 +456,7 @@ abstract class _PluginsController with Store {
     remotePlugin.name = name;
     try {
       if (remotePlugin.requiresNewerClient) {
-        return (
-          result: PluginUpdateResult.requiresNewerClient,
-          plugin: null,
-        );
+        return (result: PluginUpdateResult.requiresNewerClient, plugin: null);
       }
     } catch (error, stackTrace) {
       _errorReporter(
@@ -496,6 +503,7 @@ abstract class _PluginsController with Store {
     var requiresNewerClient = 0;
     var failed = 0;
     var notNewer = 0;
+    var deferred = 0;
 
     final updatedPlugins = <Plugin>[];
     for (final attempt in attempts) {
@@ -509,18 +517,23 @@ abstract class _PluginsController with Store {
           failed++;
         case PluginUpdateResult.notNewer:
           notNewer++;
+        case PluginUpdateResult.deferred:
+          deferred++;
       }
     }
 
+    // A room may have been joined while remote rules were downloading.
+    if (_shouldDeferRemoteUpdates()) {
+      deferred += updated;
+      updated = 0;
+      updatedPlugins.clear();
+    }
     if (updatedPlugins.isNotEmpty) {
-      await _mutateAndPersistNow(
-        () {
-          for (final plugin in updatedPlugins) {
-            _replacePlugin(plugin);
-          }
-        },
-        errorMessage: 'Plugin: failed to persist batch rule update',
-      );
+      await _mutateAndPersistNow(() {
+        for (final plugin in updatedPlugins) {
+          _replacePlugin(plugin);
+        }
+      }, errorMessage: 'Plugin: failed to persist batch rule update');
     }
     return PluginBatchUpdateResult(
       candidates: candidates.length,
@@ -528,6 +541,7 @@ abstract class _PluginsController with Store {
       requiresNewerClient: requiresNewerClient,
       failed: failed,
       notNewer: notNewer,
+      deferred: deferred,
     );
   }
 
@@ -556,16 +570,13 @@ abstract class _PluginsController with Store {
 
   Future<void> removePlugins(Set<String> pluginNames) {
     final names = Set<String>.of(pluginNames);
-    return _mutateAndPersist(
-      () {
-        for (int i = pluginList.length - 1; i >= 0; --i) {
-          var name = pluginList[i].name;
-          if (names.contains(name)) {
-            pluginList.removeAt(i);
-          }
+    return _mutateAndPersist(() {
+      for (int i = pluginList.length - 1; i >= 0; --i) {
+        var name = pluginList[i].name;
+        if (names.contains(name)) {
+          pluginList.removeAt(i);
         }
-      },
-      errorMessage: 'Plugin: failed to persist batch rule removal',
-    );
+      }
+    }, errorMessage: 'Plugin: failed to persist batch rule removal');
   }
 }

@@ -20,6 +20,8 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/shaders/shader_asset_service.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/services/player/audio_controller.dart';
+import 'package:kazumi/services/player/watch_room_service.dart';
+import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/utils/async_session.dart';
 import 'package:kazumi/utils/device.dart';
 
@@ -30,6 +32,7 @@ class PlayerController implements Disposable {
     this.shaderAssetService,
     DownloadController downloadController,
     this.audioController,
+    this.roomService,
   ) {
     danmaku = PlayerDanmakuController(
       isLocalPlayback: () => isLocalPlayback,
@@ -39,6 +42,7 @@ class PlayerController implements Disposable {
 
   final ShaderAssetService shaderAssetService;
   final AudioController audioController;
+  final WatchRoomService roomService;
   final AsyncSessionOwner _initializations = AsyncSessionOwner();
   Future<void>? _shutdownFuture;
   final PlayerPanelController panel = PlayerPanelController();
@@ -53,29 +57,35 @@ class PlayerController implements Disposable {
     isLocalPlayback: () => isLocalPlayback,
   );
   late final PlayerSyncPlayController syncplay = PlayerSyncPlayController(
-    bangumiId: () => bangumiId,
-    currentEpisode: () => currentEpisode,
-    currentRoad: () => currentRoad,
-    playing: () => playback.playing,
-    currentPosition: () => playback.currentPosition,
-    playerPosition: () => playback.playerPosition,
-    duration: () => playback.duration,
-    pause: pause,
-    play: play,
-    seek: seek,
+    roomService,
   );
   late final PlayerSeekController seeking = PlayerSeekController(
     playback: playback,
     danmaku: danmaku,
     pause: pause,
     play: play,
-    onSeekCompleted: _onSeekCompleted,
+    canSeek: _canControlPlayback,
+    beforeSeek: (target, playingAfterSeek) {
+      if (!roomService.hasSession) return true;
+      if (!roomService.canControl) {
+        _canControlPlayback();
+        return false;
+      }
+      unawaited(
+        roomService.publish(
+          position: target.inMilliseconds / 1000,
+          paused: !(playingAfterSeek ?? playback.playerPlaying),
+          doSeek: true,
+        ),
+      );
+      return true;
+    },
   );
   late final ExternalPlaybackLauncher externalPlayback =
       ExternalPlaybackLauncher(
-    videoUrl: () => videoUrl,
-    referer: () => referer,
-  );
+        videoUrl: () => videoUrl,
+        referer: () => referer,
+      );
 
   late int bangumiId;
   late int currentEpisode;
@@ -178,18 +188,22 @@ class PlayerController implements Disposable {
     referer = params.referer;
 
     KazumiLogger().i(
-        'PlayerController: ${params.isLocalPlayback ? "local" : "online"} playback, url: ${params.videoUrl}');
+      'PlayerController: ${params.isLocalPlayback ? "local" : "online"} playback, url: ${params.videoUrl}',
+    );
 
     playback.resetForInit();
     debug.playerLogLevel = GStorage.getSetting(SettingsKeys.playerLogLevel);
-    playback.playerSpeed = GStorage.getSetting(SettingsKeys.defaultPlaySpeed);
+    playback.playerSpeed = roomService.hasSession
+        ? 1
+        : GStorage.getSetting(SettingsKeys.defaultPlaySpeed);
     panel.aspectRatioMode = PlayerAspectRatio.fromStorageValue(
       GStorage.getSetting(SettingsKeys.defaultAspectRatioType),
     );
 
     playback.buttonSkipTime = GStorage.getSetting(SettingsKeys.buttonSkipTime);
-    playback.arrowKeySkipTime =
-        GStorage.getSetting(SettingsKeys.arrowKeySkipTime);
+    playback.arrowKeySkipTime = GStorage.getSetting(
+      SettingsKeys.arrowKeySkipTime,
+    );
     try {
       await _releasePlaybackResources();
     } catch (_) {}
@@ -211,8 +225,10 @@ class PlayerController implements Disposable {
         return false;
       }
       playback.loading = false;
-      KazumiLogger()
-          .e('PlayerController: failed to initialize video', error: e);
+      KazumiLogger().e(
+        'PlayerController: failed to initialize video',
+        error: e,
+      );
       return false;
     }
     if (player == null || !_ownsInitialization(initialization, player)) {
@@ -245,23 +261,27 @@ class PlayerController implements Disposable {
         return false;
       }
 
-      FlutterVolumeController.addListener((volume) {
-        if (player == null || !_ownsInitialization(initialization, player)) {
-          return;
-        }
-        if (panel.volumeSeeking) {
-          return;
-        }
-        playback.applyExternalVolume(volume * 100);
-        if (!Platform.isAndroid && !panel.volumeSeeking) {
-          panel.showVolume = true;
-          hideVolumeUITimer?.cancel();
-          hideVolumeUITimer = Timer(const Duration(seconds: 1), () {
-            panel.showVolume = false;
-            hideVolumeUITimer = null;
-          });
-        }
-      }, category: AudioSessionCategory.playback, emitOnStart: false);
+      FlutterVolumeController.addListener(
+        (volume) {
+          if (player == null || !_ownsInitialization(initialization, player)) {
+            return;
+          }
+          if (panel.volumeSeeking) {
+            return;
+          }
+          playback.applyExternalVolume(volume * 100);
+          if (!Platform.isAndroid && !panel.volumeSeeking) {
+            panel.showVolume = true;
+            hideVolumeUITimer?.cancel();
+            hideVolumeUITimer = Timer(const Duration(seconds: 1), () {
+              panel.showVolume = false;
+              hideVolumeUITimer = null;
+            });
+          }
+        },
+        category: AudioSessionCategory.playback,
+        emitOnStart: false,
+      );
       if (!_ownsInitialization(initialization, player)) {
         return false;
       }
@@ -275,13 +295,7 @@ class PlayerController implements Disposable {
 
     coverUrl = params.coverUrl;
 
-    if (syncplay.syncplayController?.isConnected ?? false) {
-      if (syncplay.syncplayController!.currentFileName !=
-          "$bangumiId[$currentEpisode]") {
-        setSyncPlayPlayingBangumi(
-            forceSyncPlaying: true, forceSyncPosition: 0.0);
-      }
-    }
+    await roomService.playerReady();
     return true;
   }
 
@@ -290,13 +304,14 @@ class PlayerController implements Disposable {
   }
 
   Future<void> setShader(SuperResolutionMode mode, {Player? player}) async {
-    await playback.setShader(
-      mode,
-      player: player,
-    );
+    await playback.setShader(mode, player: player);
   }
 
   Future<void> setPlaybackSpeed(double playerSpeed) async {
+    if (roomService.hasSession && playerSpeed != 1) {
+      KazumiDialog.showToast(message: '一起看期间使用 1 倍速');
+      return;
+    }
     await playback.setPlaybackSpeed(playerSpeed);
     try {
       updateDanmakuSpeed();
@@ -327,18 +342,28 @@ class PlayerController implements Disposable {
   Future<void> seekBy(Duration offset, {bool enableSync = true}) =>
       seeking.seekBy(offset, enableSync: enableSync);
 
-  Future<void> _onSeekCompleted(bool enableSync) async {
-    if (syncplay.hasSession) {
-      setSyncPlayCurrentPosition();
-      if (enableSync) {
-        await requestSyncPlaySync(doSeek: true);
-      }
-    }
+  bool _canControlPlayback() {
+    if (!roomService.hasSession || roomService.canControl) return true;
+    const message = '当前由房主控制播放';
+    roomService.reportError(message);
+    KazumiDialog.showToast(message: message);
+    return false;
   }
 
   Future<void> pause({bool enableSync = true}) async {
+    if (enableSync && !_canControlPlayback()) {
+      return;
+    }
     final player = playback.mediaPlayer;
     if (player == null) return;
+    if (enableSync) {
+      unawaited(
+        roomService.publish(
+          position: playback.playerPosition.inMilliseconds / 1000,
+          paused: true,
+        ),
+      );
+    }
     danmaku.canvasController.pause();
     try {
       await player.pause();
@@ -346,17 +371,22 @@ class PlayerController implements Disposable {
       return;
     }
     playback.playing = false;
-    if (syncplay.hasSession) {
-      setSyncPlayCurrentPosition();
-      if (enableSync) {
-        await requestSyncPlaySync();
-      }
-    }
   }
 
   Future<void> play({bool enableSync = true}) async {
+    if (enableSync && !_canControlPlayback()) {
+      return;
+    }
     final player = playback.mediaPlayer;
     if (player == null) return;
+    if (enableSync) {
+      unawaited(
+        roomService.publish(
+          position: playback.playerPosition.inMilliseconds / 1000,
+          paused: false,
+        ),
+      );
+    }
     danmaku.canvasController.resume();
     try {
       await player.play();
@@ -364,12 +394,6 @@ class PlayerController implements Disposable {
       return;
     }
     playback.playing = true;
-    if (syncplay.hasSession) {
-      setSyncPlayCurrentPosition();
-      if (enableSync) {
-        await requestSyncPlaySync();
-      }
-    }
   }
 
   @override
@@ -402,10 +426,7 @@ class PlayerController implements Disposable {
   }
 
   Future<void> _shutdownResources() async {
-    await Future.wait([
-      _releasePlaybackResources(),
-      syncplay.dispose(),
-    ]);
+    await Future.wait([_releasePlaybackResources()]);
   }
 
   Future<void> _releasePlaybackResources() async {
@@ -449,31 +470,27 @@ class PlayerController implements Disposable {
   }
 
   Future<void> launchExternalPlayer() async {
+    if (roomService.hasSession) {
+      KazumiDialog.showToast(message: '一起看期间请使用内置播放器');
+      return;
+    }
     await externalPlayback.launch();
   }
 
-  Future<void> createSyncPlayRoom(
-      String room,
-      String username,
-      Future<void> Function(int episode, {int currentRoad, int offset})
-          changeEpisode) async {
-    await syncplay.createRoom(
-      room,
-      username,
-      changeEpisode,
-    );
-  }
-
-  void setSyncPlayCurrentPosition(
-      {bool? forceSyncPlaying, double? forceSyncPosition}) {
+  void setSyncPlayCurrentPosition({
+    bool? forceSyncPlaying,
+    double? forceSyncPosition,
+  }) {
     syncplay.setCurrentPosition(
       forceSyncPlaying: forceSyncPlaying,
       forceSyncPosition: forceSyncPosition,
     );
   }
 
-  Future<void> setSyncPlayPlayingBangumi(
-      {bool? forceSyncPlaying, double? forceSyncPosition}) async {
+  Future<void> setSyncPlayPlayingBangumi({
+    bool? forceSyncPlaying,
+    double? forceSyncPosition,
+  }) async {
     await syncplay.setPlayingBangumi(
       forceSyncPlaying: forceSyncPlaying,
       forceSyncPosition: forceSyncPosition,

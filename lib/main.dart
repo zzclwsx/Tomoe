@@ -21,6 +21,24 @@ import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/navigation.dart';
+import 'package:kazumi/request/config/app_distribution.dart';
+
+// Keep this ID in sync with windows/runner/main.cpp. The normal instance
+// (unset environment variable) uses this application's default Hive directory.
+String? getWindowsTestInstanceId() {
+  if (!Platform.isWindows) return null;
+
+  final id = Platform.environment['KAZUMI_TEST_INSTANCE'];
+  if (id == null || id.isEmpty) return null;
+
+  // Matches the ASCII identifiers accepted by the Windows runner's mutex.
+  if (id.length > 63 || !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(id)) {
+    throw StateError(
+      'Invalid KAZUMI_TEST_INSTANCE. Use 1-63 ASCII letters, digits, _ or -.',
+    );
+  }
+  return id;
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,21 +46,28 @@ void main() async {
   MediaKit.ensureInitialized();
   if (Platform.isAndroid || Platform.isIOS) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarDividerColor: Colors.transparent,
-      statusBarColor: Colors.transparent,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        statusBarColor: Colors.transparent,
+      ),
+    );
   }
 
   if (Platform.isAndroid) {
     await WebViewFeatureService.initialize();
   }
 
+  // Compute this once so Hive and GStorage recovery/backup use the same path.
+  final testInstanceId = getWindowsTestInstanceId();
   try {
-    final hivePath = '${(await getApplicationSupportDirectory()).path}/hive';
+    final supportPath = (await getApplicationSupportDirectory()).path;
+    final hivePath = testInstanceId == null
+        ? '$supportPath/hive'
+        : '$supportPath/hive_test_$testInstanceId';
     await Hive.initFlutter(hivePath);
-    await GStorage.init();
+    await GStorage.init(hivePath: hivePath);
   } catch (e) {
     debugPrint('Storage initialization failed: $e');
 
@@ -54,18 +79,27 @@ void main() async {
         await windowManager.focus();
       });
     }
-    runApp(MaterialApp(
+    runApp(
+      MaterialApp(
         title: '初始化失败',
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
         supportedLocales: const [
           Locale.fromSubtags(
-              languageCode: 'zh', scriptCode: 'Hans', countryCode: "CN")
+            languageCode: 'zh',
+            scriptCode: 'Hans',
+            countryCode: "CN",
+          ),
         ],
         locale: const Locale.fromSubtags(
-            languageCode: 'zh', scriptCode: 'Hans', countryCode: "CN"),
+          languageCode: 'zh',
+          scriptCode: 'Hans',
+          countryCode: "CN",
+        ),
         builder: (context, child) {
           return const StorageErrorPage();
-        }));
+        },
+      ),
+    );
     return;
   }
   final showWindowButton = DesktopWindowConfig.showWindowButton;
@@ -81,7 +115,11 @@ void main() async {
           ? TitleBarStyle.hidden
           : TitleBarStyle.normal,
       windowButtonVisibility: showWindowButton,
-      title: 'Kazumi',
+      // Match the title set by windows/runner/main.cpp, so a second launch
+      // can find and activate the right instance.
+      title: testInstanceId == null
+          ? AppDistribution.productName
+          : '${AppDistribution.productName} [test $testInstanceId]',
     );
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       // window_manager controls desktop visibility to avoid startup flicker.

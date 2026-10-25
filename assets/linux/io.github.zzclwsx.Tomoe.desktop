@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Tomoe
+Comment=Watch Animes online with danmaku support.
+Comment[zh_CN]=同映：基于 Kazumi 的非官方衍生版
+Exec=tomoe
+StartupWMClass=io.github.zzclwsx.Tomoe
+Icon=io.github.zzclwsx.Tomoe
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Video;

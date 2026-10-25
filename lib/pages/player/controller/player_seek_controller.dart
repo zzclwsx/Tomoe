@@ -24,18 +24,21 @@ class PlayerSeekController {
     required PlayerDanmakuController danmaku,
     required Future<void> Function({bool enableSync}) pause,
     required Future<void> Function({bool enableSync}) play,
-    required Future<void> Function(bool enableSync) onSeekCompleted,
-  })  : _playback = playback,
-        _danmaku = danmaku,
-        _pause = pause,
-        _play = play,
-        _onSeekCompleted = onSeekCompleted;
+    bool Function(Duration target, bool? playingAfterSeek)? beforeSeek,
+    bool Function()? canSeek,
+  }) : _playback = playback,
+       _danmaku = danmaku,
+       _pause = pause,
+       _play = play,
+       _beforeSeek = beforeSeek,
+       _canSeek = canSeek;
 
   final PlayerPlaybackController _playback;
   final PlayerDanmakuController _danmaku;
   final Future<void> Function({bool enableSync}) _pause;
   final Future<void> Function({bool enableSync}) _play;
-  final Future<void> Function(bool enableSync) _onSeekCompleted;
+  final bool Function(Duration target, bool? playingAfterSeek)? _beforeSeek;
+  final bool Function()? _canSeek;
 
   Future<void> _seekTail = Future<void>.value();
   _InteractiveSeekSession? _interactiveSession;
@@ -45,6 +48,7 @@ class PlayerSeekController {
   Future<void> seekTo(
     Duration target, {
     bool enableSync = true,
+    bool? playingAfterSeek,
   }) {
     final player = _playback.mediaPlayer;
     if (player == null) {
@@ -52,6 +56,10 @@ class PlayerSeekController {
     }
 
     final normalizedTarget = _normalize(target);
+    if (enableSync &&
+        _beforeSeek?.call(normalizedTarget, playingAfterSeek) == false) {
+      return Future<void>.value();
+    }
     _playback.currentPosition = normalizedTarget;
     _danmaku.clearAndInvalidateScheduledDanmakus();
 
@@ -64,24 +72,16 @@ class PlayerSeekController {
       } catch (_) {
         return;
       }
-      if (_playback.isCurrentPlayer(player)) {
-        await _onSeekCompleted(enableSync);
-      }
     });
     _seekTail = _settle(operation);
     return operation;
   }
 
-  Future<void> seekBy(
-    Duration offset, {
-    bool enableSync = true,
-  }) =>
-      seekTo(
-        _playback.currentPosition + offset,
-        enableSync: enableSync,
-      );
+  Future<void> seekBy(Duration offset, {bool enableSync = true}) =>
+      seekTo(_playback.currentPosition + offset, enableSync: enableSync);
 
   void beginInteractiveSeek() {
+    if (_canSeek?.call() == false) return;
     final initialPosition = _playback.currentPosition;
     final previousSession = _interactiveSession;
     // Keep the original playing state across overlapping gestures.
@@ -112,8 +112,10 @@ class PlayerSeekController {
     if (session == null) {
       return Future<bool>.value(false);
     }
-    return session.completion ??=
-        _finishInteractiveSeek(session, cancelled: cancelled);
+    return session.completion ??= _finishInteractiveSeek(
+      session,
+      cancelled: cancelled,
+    );
   }
 
   void invalidateInteractiveSeek() {
@@ -137,7 +139,9 @@ class PlayerSeekController {
         return false;
       }
       if (!cancelled) {
-        await seekTo(session.target);
+        // The temporary preview pause is local. Publish the state the player
+        // will resume into, rather than accidentally pausing the whole room.
+        await seekTo(session.target, playingAfterSeek: true);
         if (!_isCurrent(session)) {
           return false;
         }

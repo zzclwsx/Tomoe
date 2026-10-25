@@ -34,12 +34,16 @@ Future<PluginUpdateResult> updatePluginWithFeedback(
     PluginUpdateResult.requiresNewerClient => '规则需要更高版本客户端',
     PluginUpdateResult.failed => installing ? '导入规则失败' : '更新规则失败',
     PluginUpdateResult.notNewer => '远程规则版本不高于本地，已跳过更新',
+    PluginUpdateResult.deferred => '房间会话期间暂缓更新规则，请退出房间后重试',
   };
   KazumiDialog.showToast(message: message);
   return result;
 }
 
 String _batchUpdateMessage(PluginBatchUpdateResult result) {
+  if (result.deferred > 0) {
+    return '房间会话期间暂缓更新规则，请退出房间后重试';
+  }
   if (result.hasNoCandidates) {
     return '没有可更新的规则';
   }

@@ -2,14 +2,13 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_mobx/flutter_mobx.dart';
 
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/split_list_row.dart';
 import 'package:kazumi/bean/widget/tonal_card.dart';
-import 'package:kazumi/pages/player/player_controller.dart';
+import 'package:kazumi/services/player/watch_room_service.dart';
 import 'package:kazumi/services/player/syncplay_endpoint.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/utils/device.dart';
@@ -19,15 +18,13 @@ enum _SyncPlayDestination { create, join, server }
 
 Future<void> showSyncPlaySheet(
   BuildContext context, {
-  required PlayerController playerController,
-  required Future<void> Function(int episode, {int currentRoad, int offset})
-      changeEpisode,
+  required WatchRoomService room,
 }) async {
   final _SyncPlayDestination? destination =
       await _showStep<_SyncPlayDestination>(
-    context,
-    (context) => _SyncPlayHomeSheet(playerController: playerController),
-  );
+        context,
+        (context) => _SyncPlayHomeSheet(service: room),
+      );
   if (destination == null || !context.mounted) {
     return;
   }
@@ -35,21 +32,20 @@ Future<void> showSyncPlaySheet(
     context,
     (context) => switch (destination) {
       _SyncPlayDestination.create ||
-      _SyncPlayDestination.join =>
-        _SyncPlayRoomSheet(
-          isCreate: destination == _SyncPlayDestination.create,
-          playerController: playerController,
-          changeEpisode: changeEpisode,
-        ),
+      _SyncPlayDestination.join => _SyncPlayRoomSheet(
+        isCreate: destination == _SyncPlayDestination.create,
+        service: room,
+      ),
       _SyncPlayDestination.server => const _SyncPlayServerSheet(),
     },
   );
+  if (context.mounted) await showSyncPlaySheet(context, room: room);
 }
 
 Future<T?> _showStep<T>(BuildContext context, WidgetBuilder builder) {
   return showAdaptiveBottomSheet<T>(
     context: context,
-    maxHeightFactor: 0.8,
+    maxHeightFactor: 0.9,
     compactLandscapeMaxHeightFactor: 0.95,
     builder: builder,
   );
@@ -80,6 +76,7 @@ class _SyncPlaySheetScaffold extends StatelessWidget {
     required this.bodyBuilder,
     this.showCancel = false,
     this.primaryAction,
+    this.actionInHeader = false,
   });
 
   final String title;
@@ -87,6 +84,7 @@ class _SyncPlaySheetScaffold extends StatelessWidget {
   final Widget Function(BuildContext context, bool compact) bodyBuilder;
   final bool showCancel;
   final Widget? primaryAction;
+  final bool actionInHeader;
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +105,7 @@ class _SyncPlaySheetScaffold extends StatelessWidget {
             description: showDescription ? description : null,
             compact: compact,
             onClose: () => Navigator.of(context).pop(),
-            trailing: compact && primaryAction != null
+            trailing: (compact || actionInHeader) && primaryAction != null
                 ? Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -130,7 +128,7 @@ class _SyncPlaySheetScaffold extends StatelessWidget {
           ),
           if (compact)
             const SizedBox(height: 12)
-          else if (showCancel || primaryAction != null)
+          else if (showCancel || (primaryAction != null && !actionInHeader))
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
               child: Row(
@@ -154,50 +152,68 @@ class _SyncPlaySheetScaffold extends StatelessWidget {
 }
 
 class _SyncPlayHomeSheet extends StatelessWidget {
-  const _SyncPlayHomeSheet({required this.playerController});
+  const _SyncPlayHomeSheet({required this.service});
 
-  final PlayerController playerController;
+  final WatchRoomService service;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
-    return Observer(builder: (context) {
-      // Read all observables here; the deferred body builder is not tracked.
-      final bool hasSession = playerController.syncplay.hasSession;
-      final String room = playerController.syncplay.syncplayRoom;
-      final int rtt = playerController.syncplay.syncplayClientRtt;
-      final bool connected = room.isNotEmpty;
-      // Lock server selection while connected, even before joining a room.
-      final bool connecting = hasSession && !connected;
+    return ListenableBuilder(
+      listenable: service,
+      builder: (context, _) {
+        // Read all observables here; the deferred body builder is not tracked.
+        final bool hasSession = service.hasSession;
+        final String room = service.room;
+        final int rtt = service.rtt;
+        final bool connected = room.isNotEmpty;
+        // Lock server selection while connected, even before joining a room.
+        final bool connecting = hasSession && !connected;
 
-      return _SyncPlaySheetScaffold(
-        title: '一起看',
-        description: '和朋友同步看番',
-        primaryAction: hasSession
-            ? FilledButton.tonalIcon(
-                onPressed: () async {
-                  await playerController.exitSyncPlayRoom();
-                },
-                style: FilledButton.styleFrom(
-                  backgroundColor: colorScheme.errorContainer,
-                  foregroundColor: colorScheme.onErrorContainer,
-                ),
-                icon: const Icon(Icons.logout_rounded),
-                label: Text(connecting ? '取消连接' : '断开连接'),
-              )
-            : null,
-        bodyBuilder: (context, compact) {
-          if (connected) {
-            return _buildConnected(context, room: room, rtt: rtt);
-          }
-          if (connecting) {
-            return _buildConnecting(context);
-          }
-          return _buildLobby(context, compact: compact);
-        },
-      );
-    });
+        return _SyncPlaySheetScaffold(
+          title: '一起看',
+          description: '和朋友同步看番',
+          actionInHeader: true,
+          primaryAction: hasSession
+              ? FilledButton.tonalIcon(
+                  onPressed: () async {
+                    await service.leave();
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: colorScheme.errorContainer,
+                    foregroundColor: colorScheme.onErrorContainer,
+                  ),
+                  icon: const Icon(Icons.logout_rounded),
+                  label: Text(connecting ? '取消连接' : '退出房间'),
+                )
+              : null,
+          bodyBuilder: (context, compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (service.error != null) ...[
+                  TonalCard(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      service.error!,
+                      style: TextStyle(color: colorScheme.error),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (connected)
+                  _buildConnected(context, room: room, rtt: rtt)
+                else if (connecting)
+                  _buildConnecting(context)
+                else
+                  _buildLobby(context, compact: compact),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildConnecting(BuildContext context) {
@@ -209,10 +225,7 @@ class _SyncPlayHomeSheet extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            const SizedBox.square(
-              dimension: 22,
-              child: LoadingIndicator(),
-            ),
+            const SizedBox.square(dimension: 22, child: LoadingIndicator()),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
@@ -220,7 +233,7 @@ class _SyncPlayHomeSheet extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '正在连接',
+                    service.reconnecting ? '正在重新连接' : '正在连接',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
@@ -228,7 +241,7 @@ class _SyncPlayHomeSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    _readEndPoint(),
+                    service.endpoint,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
@@ -248,32 +261,36 @@ class _SyncPlayHomeSheet extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         IntrinsicHeight(
-            child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
                 child: _ChoiceCard(
-              icon: Icons.add_circle_outline_rounded,
-              title: '创建房间',
-              description: '邀请朋友加入',
-              onTap: () =>
-                  Navigator.of(context).pop(_SyncPlayDestination.create),
-            )),
-            const SizedBox(width: 12),
-            Expanded(
+                  icon: Icons.add_circle_outline_rounded,
+                  title: '创建房间',
+                  description: '邀请朋友加入',
+                  onTap: () =>
+                      Navigator.of(context).pop(_SyncPlayDestination.create),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
                 child: _ChoiceCard(
-              icon: Icons.login_rounded,
-              title: '加入房间',
-              description: '输入房间号',
-              onTap: () => Navigator.of(context).pop(_SyncPlayDestination.join),
-            )),
-          ],
-        )),
+                  icon: Icons.login_rounded,
+                  title: '加入房间',
+                  description: '输入房间号',
+                  onTap: () =>
+                      Navigator.of(context).pop(_SyncPlayDestination.join),
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
         ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           title: const Text('同步服务器'),
-          subtitle: Text(_readEndPoint(), overflow: TextOverflow.ellipsis),
+          subtitle: Text(service.endpoint, overflow: TextOverflow.ellipsis),
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => Navigator.of(context).pop(_SyncPlayDestination.server),
         ),
@@ -298,6 +315,108 @@ class _SyncPlayHomeSheet extends StatelessWidget {
           trailing: [_CopyButton(value: room)],
         ),
         const SizedBox(height: 12),
+        if (service.snapshot != null) ...[
+          TonalCard(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('房间控制', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 12),
+                _RoomModeSelector(
+                  value: service.snapshot!.mode,
+                  onChanged: service.isHost
+                      ? (mode) => service.changeMode(mode)
+                      : null,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  service.isHost ? '切换模式会更新房间号，在线成员自动跟随' : '由房主设置房间控制模式',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        TonalCard(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.movie_outlined),
+                title: Text(
+                  service.snapshot == null
+                      ? '等待房间信息'
+                      : service.snapshot?.content?.name ?? '等待选片',
+                ),
+                subtitle: Text(
+                  service.snapshot == null
+                      ? '请确认完整房间号，且与好友使用同一服务器'
+                      : service.snapshot?.content == null
+                      ? '进入番剧并播放，即可开始一起看'
+                      : '${service.snapshot!.content!.pluginName} · ${service.snapshot!.content!.roadName} · ${service.snapshot!.content!.episodeName}',
+                ),
+                isThreeLine: service.snapshot?.content != null,
+              ),
+              if (service.snapshot?.content != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        service.follow();
+                      },
+                      icon: const Icon(Icons.play_arrow_rounded),
+                      label: const Text('跟随播放'),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        TonalCard(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.groups_outlined),
+                title: Text('房间成员 · ${service.members.length}'),
+                subtitle: service.hostOnline
+                    ? null
+                    : const Text('房主暂时离线，正在等待重连'),
+              ),
+              for (final member in service.members.keys)
+                ListTile(
+                  dense: true,
+                  leading: Icon(
+                    member == service.snapshot?.host
+                        ? Icons.key_rounded
+                        : Icons.person_outline_rounded,
+                  ),
+                  title: Text(member),
+                  trailing: Text(
+                    member == service.snapshot?.host
+                        ? '房主'
+                        : member == service.username
+                        ? '我'
+                        : '成员',
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '分享完整房间号，好友即可加入',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
         TonalCard(
           child: Column(
             children: [
@@ -312,16 +431,9 @@ class _SyncPlayHomeSheet extends StatelessWidget {
                 context,
                 icon: Icons.dns_outlined,
                 label: '同步服务器',
-                value: _readEndPoint(),
+                value: service.endpoint,
               ),
             ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          '分享房间号，好友即可加入',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
           ),
         ),
       ],
@@ -368,11 +480,12 @@ class _SyncPlayHomeSheet extends StatelessWidget {
 }
 
 class _ChoiceCard extends StatelessWidget {
-  const _ChoiceCard(
-      {required this.icon,
-      required this.title,
-      required this.description,
-      required this.onTap});
+  const _ChoiceCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
   final IconData icon;
   final String title;
   final String description;
@@ -393,9 +506,12 @@ class _ChoiceCard extends StatelessWidget {
               const SizedBox(height: 20),
               Text(title, style: theme.textTheme.titleMedium),
               const SizedBox(height: 4),
-              Text(description,
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              Text(
+                description,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ],
           ),
         ),
@@ -405,16 +521,10 @@ class _ChoiceCard extends StatelessWidget {
 }
 
 class _SyncPlayRoomSheet extends StatefulWidget {
-  const _SyncPlayRoomSheet({
-    required this.isCreate,
-    required this.playerController,
-    required this.changeEpisode,
-  });
+  const _SyncPlayRoomSheet({required this.isCreate, required this.service});
 
   final bool isCreate;
-  final PlayerController playerController;
-  final Future<void> Function(int episode, {int currentRoad, int offset})
-      changeEpisode;
+  final WatchRoomService service;
 
   @override
   State<_SyncPlayRoomSheet> createState() => _SyncPlayRoomSheetState();
@@ -444,12 +554,14 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
   final TextEditingController _usernameController = TextEditingController();
 
   late String _createdRoom = _generateRoomNumber();
+  WatchRoomMode _mode = WatchRoomMode.hostOnly;
 
   @override
   void initState() {
     super.initState();
-    _usernameController.text =
-        GStorage.getSetting<String>(SettingsKeys.syncPlayUserName);
+    _usernameController.text = GStorage.getSetting<String>(
+      SettingsKeys.syncPlayUserName,
+    );
     if (_usernameController.text.isEmpty) {
       _usernameController.text = _generateUserName();
     }
@@ -467,13 +579,17 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
       return;
     }
     final String username = _usernameController.text.trim();
-    final String room =
-        widget.isCreate ? _createdRoom : _roomController.text.trim();
+    final String room = widget.isCreate
+        ? _createdRoom
+        : _roomController.text.trim();
     GStorage.putSetting<String>(SettingsKeys.syncPlayUserName, username);
 
     Navigator.of(context).pop();
-    widget.playerController
-        .createSyncPlayRoom(room, username, widget.changeEpisode);
+    if (widget.isCreate) {
+      widget.service.create(room, username, _mode);
+    } else {
+      widget.service.join(room, username);
+    }
   }
 
   @override
@@ -482,19 +598,20 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
 
     return _SyncPlaySheetScaffold(
       title: isCreate ? '创建房间' : '加入房间',
-      description: isCreate ? '将房间号分享给好友' : '输入好友的房间号',
+      description: isCreate ? '创建后可复制完整房间号邀请好友' : '输入好友的房间号',
       showCancel: true,
       primaryAction: FilledButton.icon(
         onPressed: _submit,
         icon: Icon(
-            isCreate ? Icons.play_circle_outline_rounded : Icons.login_rounded),
+          isCreate ? Icons.play_circle_outline_rounded : Icons.login_rounded,
+        ),
         label: Text(isCreate ? '创建并加入' : '加入房间'),
       ),
       bodyBuilder: (context, compact) {
         final Widget lead = isCreate
             ? _RoomNumberCard(
                 room: _createdRoom,
-                label: '房间号',
+                label: '房间编号',
                 trailing: [
                   IconButton(
                     onPressed: () =>
@@ -503,30 +620,48 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
                     color: Theme.of(context).colorScheme.onSurface,
                     icon: const Icon(Icons.refresh_rounded),
                   ),
-                  _CopyButton(value: _createdRoom),
                 ],
               )
             : _buildRoomField();
 
         return Form(
           key: _formKey,
-          child: compact
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: lead),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildUsernameField(compact: true)),
-                  ],
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    lead,
-                    const SizedBox(height: 16),
-                    _buildUsernameField(),
-                  ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              compact
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: lead),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildUsernameField(compact: true)),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        lead,
+                        const SizedBox(height: 16),
+                        _buildUsernameField(),
+                      ],
+                    ),
+              if (isCreate) ...[
+                const SizedBox(height: 20),
+                _RoomModeSelector(
+                  value: _mode,
+                  onChanged: (mode) => setState(() => _mode = mode),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  _mode == WatchRoomMode.hostOnly
+                      ? '由房主统一选片和控制播放'
+                      : '所有成员均可选片和控制播放',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
         );
       },
     );
@@ -536,21 +671,22 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
     return TextFormField(
       controller: _roomController,
       autofocus: true,
-      keyboardType: TextInputType.number,
+      keyboardType: TextInputType.text,
       textInputAction: TextInputAction.next,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       autovalidateMode: AutovalidateMode.onUserInteraction,
       decoration: _sheetInputDecoration(
         labelText: '房间号',
-        hintText: '6-10 位数字',
+        hintText: '粘贴好友分享的完整房间号',
       ),
       validator: (value) {
         final String text = (value ?? '').trim();
         if (text.isEmpty) {
           return '请输入房间号';
         }
-        if (!RegExp(r'^[0-9]{6,10}$').hasMatch(text)) {
-          return '房间号为 6-10 位数字';
+        if (!RegExp(
+          r'^(?:[0-9]{6,10}|\+[0-9]{6,10}:[a-fA-F0-9]{12})$',
+        ).hasMatch(text)) {
+          return '请粘贴完整房间号，包括受控房间的前后缀';
         }
         return null;
       },
@@ -579,6 +715,31 @@ class _SyncPlayRoomSheetState extends State<_SyncPlayRoomSheet> {
       onFieldSubmitted: (_) => _submit(),
     );
   }
+}
+
+class _RoomModeSelector extends StatelessWidget {
+  const _RoomModeSelector({required this.value, this.onChanged});
+  final WatchRoomMode value;
+  final ValueChanged<WatchRoomMode>? onChanged;
+  @override
+  Widget build(BuildContext context) => SegmentedButton<WatchRoomMode>(
+    segments: const [
+      ButtonSegment(
+        value: WatchRoomMode.hostOnly,
+        icon: Icon(Icons.key_rounded),
+        label: Text('房主控制'),
+      ),
+      ButtonSegment(
+        value: WatchRoomMode.everyone,
+        icon: Icon(Icons.groups_outlined),
+        label: Text('全员控制'),
+      ),
+    ],
+    selected: {value},
+    onSelectionChanged: onChanged == null
+        ? null
+        : (values) => onChanged!(values.single),
+  );
 }
 
 class _SyncPlayServerSheet extends StatefulWidget {
@@ -637,10 +798,7 @@ class _SyncPlayServerSheetState extends State<_SyncPlayServerSheet> {
       title: '同步服务器',
       description: '房间成员需使用同一服务器',
       showCancel: true,
-      primaryAction: FilledButton(
-        onPressed: _save,
-        child: const Text('保存'),
-      ),
+      primaryAction: FilledButton(onPressed: _save, child: const Text('保存')),
       bodyBuilder: (context, compact) {
         final List<String> endPoints = [
           ...officialSyncPlayEndPoints,
@@ -650,10 +808,12 @@ class _SyncPlayServerSheetState extends State<_SyncPlayServerSheet> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SplitListGroup(children: [
-              for (final endPoint in endPoints)
-                _buildEndPointTile(context, endPoint),
-            ]),
+            SplitListGroup(
+              children: [
+                for (final endPoint in endPoints)
+                  _buildEndPointTile(context, endPoint),
+              ],
+            ),
             if (_selectedEndPoint == _customOption) ...[
               const SizedBox(height: 16),
               TextField(

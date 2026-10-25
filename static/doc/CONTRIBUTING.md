@@ -1,5 +1,9 @@
 # 贡献指引
 
+同映是基于 [Predidit/Kazumi](https://github.com/Predidit/Kazumi) 的非官方衍生版，
+感谢原作者和所有贡献者。本分支的问题和改动请先提交到同映仓库；
+确认有通用价值的修复后，再单独整理并考虑贡献给上游。
+
 欢迎您提交 Pull Request 来一起建设这个项目！
 
 在开始之前, 请先阅读这份指引, 以保障审阅者和您之间的协作效率。
@@ -18,8 +22,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/Predidit/Kazumi.git
-cd Kazumi
+git clone https://github.com/zzclwsx/Tomoe.git
+cd Tomoe
 
 # 检查 Flutter SDK 状态并下载相关包
 flutter doctor -v

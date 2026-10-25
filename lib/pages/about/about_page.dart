@@ -4,6 +4,7 @@ import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/widget/content_section.dart';
 import 'package:kazumi/pages/about/about_widgets.dart';
 import 'package:kazumi/request/config/api_endpoints.dart';
+import 'package:kazumi/request/config/app_distribution.dart';
 
 class AboutPage extends StatelessWidget {
   const AboutPage({super.key, required this.onCheckUpdate});
@@ -12,87 +13,86 @@ class AboutPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SettingsDetailScaffold(
-        title: const Text('关于'),
-        body: AboutContent(
-          children: [
-            _ProjectHeader(onCheckUpdate: onCheckUpdate),
-            const SizedBox(height: 24),
-            LayoutBuilder(builder: (context, constraints) {
-              final sections = [
-                ContentSection.group(
-                  title: '项目',
-                  children: const [
-                    AboutLinkTile(
-                      icon: Icons.code_rounded,
-                      title: '源代码',
-                      url: ApiEndpoints.sourceUrl,
-                    ),
-                    AboutLinkTile(
-                      icon: Icons.language_rounded,
-                      title: '项目主页',
-                      url: ApiEndpoints.projectUrl,
-                    ),
-                    AboutLinkTile(
-                      icon: Icons.bug_report_rounded,
-                      title: '问题反馈',
-                      url: '${ApiEndpoints.sourceUrl}/issues',
-                    ),
-                    AboutLinkTile(
-                      icon: Icons.forum_rounded,
-                      title: 'Telegram',
-                      url: ApiEndpoints.telegramGroup,
-                    ),
-                  ],
-                ),
-                ContentSection.group(
-                  title: '开源',
-                  children: [
-                    const AboutLinkTile(
-                      icon: Icons.handshake_outlined,
-                      title: '贡献指南',
-                      url:
-                          '${ApiEndpoints.sourceUrl}/blob/main/static/doc/CONTRIBUTING.md',
-                    ),
-                    const AboutLinkTile.route(
-                      icon: Icons.favorite_outline_rounded,
-                      title: '致谢',
-                      route: '/settings/about/credits',
-                    ),
-                    const AboutLinkTile(
-                      icon: Icons.balance_rounded,
-                      title: 'GPL-3.0 许可证',
-                      url: '${ApiEndpoints.sourceUrl}/blob/main/LICENSE',
-                    ),
-                    const AboutLinkTile.route(
-                      icon: Icons.description_outlined,
-                      title: '第三方许可证',
-                      route: '/settings/about/license',
-                    ),
-                  ],
-                ),
-              ];
-              if (constraints.maxWidth >= 640 &&
-                  MediaQuery.textScalerOf(context).scale(14) < 21) {
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: sections[0]),
-                    const SizedBox(width: 16),
-                    Expanded(child: sections[1]),
-                  ],
-                );
-              }
-              return Column(
+    title: const Text('关于'),
+    body: AboutContent(
+      children: [
+        _ProjectHeader(onCheckUpdate: onCheckUpdate),
+        const SizedBox(height: 24),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final sections = [
+              ContentSection.group(
+                title: '项目',
+                children: const [
+                  AboutLinkTile(
+                    icon: Icons.code_rounded,
+                    title: '源代码',
+                    url: ApiEndpoints.sourceUrl,
+                  ),
+                  AboutLinkTile(
+                    icon: Icons.language_rounded,
+                    title: '发布与下载',
+                    url: AppDistribution.releasesUrl,
+                  ),
+                  AboutLinkTile(
+                    icon: Icons.bug_report_rounded,
+                    title: '问题反馈',
+                    url: '${ApiEndpoints.sourceUrl}/issues',
+                  ),
+                  AboutLinkTile(
+                    icon: Icons.forum_rounded,
+                    title: '原作 Kazumi · Predidit',
+                    subtitle: '本应用是独立维护的非官方衍生版',
+                    url: AppDistribution.upstreamSourceUrl,
+                  ),
+                ],
+              ),
+              ContentSection.group(
+                title: '开源',
                 children: [
-                  sections[0],
-                  const SizedBox(height: 24),
-                  sections[1]
+                  const AboutLinkTile(
+                    icon: Icons.handshake_outlined,
+                    title: '贡献指南',
+                    url:
+                        '${ApiEndpoints.sourceUrl}/blob/main/static/doc/CONTRIBUTING.md',
+                  ),
+                  const AboutLinkTile.route(
+                    icon: Icons.favorite_outline_rounded,
+                    title: '致谢',
+                    route: '/settings/about/credits',
+                  ),
+                  const AboutLinkTile(
+                    icon: Icons.balance_rounded,
+                    title: 'GPL-3.0 许可证',
+                    url: '${ApiEndpoints.sourceUrl}/blob/main/LICENSE',
+                  ),
+                  const AboutLinkTile.route(
+                    icon: Icons.description_outlined,
+                    title: '第三方许可证',
+                    route: '/settings/about/license',
+                  ),
+                ],
+              ),
+            ];
+            if (constraints.maxWidth >= 640 &&
+                MediaQuery.textScalerOf(context).scale(14) < 21) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: sections[0]),
+                  const SizedBox(width: 16),
+                  Expanded(child: sections[1]),
                 ],
               );
-            }),
-          ],
+            }
+            return Column(
+              children: [sections[0], const SizedBox(height: 24), sections[1]],
+            );
+          },
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _ProjectHeader extends StatelessWidget {
@@ -112,7 +112,7 @@ class _ProjectHeader extends StatelessWidget {
           Semantics(
             header: true,
             child: Text(
-              'Kazumi',
+              '${AppDistribution.appName} ${AppDistribution.productName}',
               style: theme.textTheme.displayMedium?.copyWith(
                 color: colors.primary,
                 fontWeight: FontWeight.w600,
@@ -121,14 +121,16 @@ class _ProjectHeader extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            ApiEndpoints.version,
+            '${ApiEndpoints.version} · 规则 API ${ApiEndpoints.apiLevel}',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colors.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            '基于自定义规则的开源番剧应用',
+            '基于 Predidit/Kazumi 的非官方个人衍生版。'
+            '基础功能与主要实现来自原作者及贡献者，在此致谢。'
+            '本分支主要调整一起看功能，相关问题请反馈至本分支。',
             style: theme.textTheme.bodyLarge,
           ),
           const SizedBox(height: 20),

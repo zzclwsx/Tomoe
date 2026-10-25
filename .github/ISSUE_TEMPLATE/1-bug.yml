@@ -1,107 +1,40 @@
-name: Bug 反馈
-description: 提交一个问题反馈。
-title: '[BUG]: '
-labels: ['bug']
+name: 同映问题反馈
+description: 报告同映的问题或规则兼容情况。
+title: '[BUG] '
 body:
   - type: markdown
     attributes:
       value: |
-        请填写以下内容，以方便我们进行问题定位和修复。
-        填写前，请先查看 [Issues 列表](https://github.com/Predidit/Kazumi/issues) 查看是否已经有和你主题重复的 Issue。重复 Issue 会被关闭。
-        如果你的 Kazumi 版本不为最新版，请先更新再重试查看问题是否仍然存在。旧版本的 Issue 可能不会被处理，因为新版可能已经修复了问题。 
-
-  - type: textarea
-    id: description
-    attributes:
-      label: 描述
-      description: 简要描述发生了什么问题，你的预期行为是什么。
-    validations:
-      required: true
-
+        同映基于 Predidit/Kazumi 独立维护。感谢原作者与贡献者，请先在本仓库反馈本分支的问题。
+        请勿提交房间密码、访问令牌等私密信息。
   - type: input
     id: version
     attributes:
-      label: Kazumi 版本
-      description: '你所使用的 Kazumi 版本。版本号可以在 我的-设置-关于 页面底部找到。'
+      label: 同映版本与规则 API
+      description: 可在“关于”页面查看。
+      placeholder: 1.0.0 / API 9
     validations:
       required: true
-
-  - type: dropdown
+  - type: input
     id: platform
     attributes:
-      label: 你所使用的平台
-      options:
-        - macOS
-        - Android
-        - Windows
-        - Linux
-        - iOS
+      label: 系统与设备
+      placeholder: Windows 11 x64
     validations:
       required: true
-
   - type: input
-    id: os-version
+    id: rule
     attributes:
-      label: 系统版本
-      description: '所使用的系统版本，例如 “Windows 11 25H2”, “Android 15”, “iOS 26.5”'
+      label: 规则名称与版本
+      description: 与规则或一起看相关时填写；使用镜像时请注明。
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤、期望行为与实际结果
+      description: 一起看问题请同时说明房主/成员、控制模式及两边版本。
     validations:
       required: true
-
-  - type: textarea
-    id: hardware
-    attributes:
-      label: 硬件信息
-      description: 如果你使用独立显卡或核显，请提供显卡、 CPU 型号、显卡驱动版本等信息。手机设备无需提供。例如 “NVIDIA RTX 2070 Super 驱动版本 610.47”, “Apple M4”, “AMD RX 6500 XT”
-    validations:
-      required: false
-
-  - type: textarea
-    id: steps
-    attributes:
-      label: 复现步骤
-      description: 简要说明这个问题是如何复现的。
-      placeholder: |
-        第一步...
-        第二步...
-        第三步...
-        最后错误出现：...
-    validations:
-      required: true
-
   - type: textarea
     id: logs
     attributes:
-      label: 日志信息
-      description: |
-        请进入 我的-设置-关于 页面，找到错误日志，复制并粘贴在上方。
-        如果日志过多，可以放在文本文档中以压缩包形式发送。
-      value: |
-        <details open><summary>Log</summary>
-
-        ```shell
-        [在此处粘贴你的日志]
-        ```
-
-        </details>
-    validations:
-      required: true
-
-  - type: textarea
-    id: screenshots
-    attributes:
-      label: 截图
-      description: 如果可以，请附上出现错误时的截图。
-    validations:
-      required: false
-
-  - type: checkboxes
-    id: validations
-    attributes:
-      label: 提交前确认
-      options:
-        - label: 我已经查看了 [Issues 列表](https://github.com/Predidit/Kazumi/issues) ，没有发现重复问题。
-          required: true
-        - label: 我已经提交了日志信息，并说明了问题和复现步骤。
-          required: true
-        - label: 我正在使用最新版本的 Kazumi 应用，问题没有被修复。
-          required: true
+      label: 错误信息或日志
