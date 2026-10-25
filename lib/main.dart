@@ -19,6 +19,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:kazumi/utils/device.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:kazumi/services/platform/webview_feature_service.dart';
+import 'package:kazumi/services/platform/visual_asset_licenses.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/navigation.dart';
 import 'package:kazumi/request/config/app_distribution.dart';
@@ -43,6 +44,7 @@ String? getWindowsTestInstanceId() {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerEchHttpLicenses();
+  registerVisualAssetLicenses();
   MediaKit.ensureInitialized();
   if (Platform.isAndroid || Platform.isIOS) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

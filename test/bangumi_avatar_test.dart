@@ -28,8 +28,8 @@ void main() {
     );
 
     final avatar = tester.widget<CircleAvatar>(find.byType(CircleAvatar));
-    final provider = avatar.backgroundImage! as AssetImage;
-    expect(provider.assetName, 'assets/images/noface.jpeg');
+    expect(avatar.backgroundImage, isNull);
+    expect((avatar.child! as Icon).icon, Icons.person_outline_rounded);
   });
 
   testWidgets('uses the local fallback after an image error', (tester) async {
@@ -43,12 +43,10 @@ void main() {
       find.byType(CachedNetworkImage),
     );
     final context = tester.element(find.byType(CachedNetworkImage));
-    final fallback = image.errorWidget!(
-      context,
-      image.imageUrl,
-      Exception('image failed'),
-    ) as CircleAvatar;
-    final provider = fallback.backgroundImage! as AssetImage;
-    expect(provider.assetName, 'assets/images/noface.jpeg');
+    final fallback =
+        image.errorWidget!(context, image.imageUrl, Exception('image failed'))
+            as CircleAvatar;
+    expect(fallback.backgroundImage, isNull);
+    expect((fallback.child! as Icon).icon, Icons.person_outline_rounded);
   });
 }

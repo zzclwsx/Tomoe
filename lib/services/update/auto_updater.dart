@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/request/clients/download_http_client.dart';
@@ -9,6 +10,8 @@ import 'package:kazumi/request/config/app_distribution.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
+import 'package:kazumi/services/update/windows_portable_updater.dart';
+import 'package:path/path.dart' as p;
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -495,7 +498,7 @@ class AutoUpdater {
           },
         );
 
-        _showDownloadCompleteDialog(downloadPath, updateInfo);
+        _showDownloadCompleteDialog(downloadPath, updateInfo, expectedHash);
       },
       onError: (e, _) {
         String errorMessage = '下载失败';
@@ -550,60 +553,82 @@ class AutoUpdater {
 
   final ValueNotifier<double> _downloadProgress = ValueNotifier(0.0);
   final _downloadDialogs = KazumiDialogController();
+  final _installationDialogs = KazumiDialogController();
 
-  void _showDownloadCompleteDialog(String filePath, UpdateInfo updateInfo) {
+  void _showDownloadCompleteDialog(
+    String filePath,
+    UpdateInfo updateInfo,
+    String expectedHash,
+  ) {
+    final portable =
+        Platform.isWindows &&
+        updateInfo.recommendedInstallationType ==
+            InstallationType.windowsPortable;
     KazumiDialog.show(
       builder: (context) {
         return AlertDialog(
           title: const Text('下载完成'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.check_circle,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text('新版本 ${updateInfo.version} 已下载完成')),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                '安装过程中应用将会退出',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Text(
-                      '文件位置:',
-                      style: Theme.of(context).textTheme.labelSmall,
+                    Icon(
+                      Icons.check_circle,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 20,
                     ),
-                    const SizedBox(height: 4),
-                    SelectableText(
-                      filePath,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text('新版本 ${updateInfo.version} 已下载完成')),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  portable ? '将替换当前目录中的程序文件并重启，设置与历史会保留' : '安装过程中应用将会退出',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        portable ? '下载文件：' : '文件位置:',
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        filePath,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                      if (portable) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          '更新到：',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(WindowsPortableUpdater.currentDirectory),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -627,9 +652,10 @@ class AutoUpdater {
                 _installUpdate(
                   filePath,
                   updateInfo.recommendedInstallationType,
+                  expectedHash,
                 );
               },
-              child: const Text('立即安装'),
+              child: Text(portable ? '更新并重启' : '立即安装'),
             ),
           ],
         );
@@ -652,7 +678,12 @@ class AutoUpdater {
     final fileName = _getFileNameFromUrl(url, version);
     final tempDir = await getTemporaryDirectory();
     checkCancelled();
-    final filePath = '${tempDir.path}/$fileName';
+    final downloadDirectory = Platform.isWindows
+        ? await Directory(
+            p.join(tempDir.path, 'Tomoe', 'updates'),
+          ).create(recursive: true)
+        : tempDir;
+    final filePath = p.join(downloadDirectory.path, fileName);
     final file = File(filePath);
     if (await file.exists()) {
       try {
@@ -705,10 +736,16 @@ class AutoUpdater {
     return filePath;
   }
 
-  void _installUpdate(
+  Future<void> _installUpdate(
     String filePath,
     InstallationType installationType,
+    String expectedHash,
   ) async {
+    if (Platform.isWindows &&
+        installationType == InstallationType.windowsPortable) {
+      await _installWindowsPortable(filePath, expectedHash);
+      return;
+    }
     try {
       KazumiDialog.showToast(message: '准备安装更新，应用即将退出...');
 
@@ -743,6 +780,80 @@ class AutoUpdater {
       KazumiDialog.showToast(message: '启动安装程序失败: ${e.toString()}');
       KazumiLogger().e('Update: launch installer failed', error: e);
     }
+  }
+
+  Future<void> _installWindowsPortable(
+    String archivePath,
+    String expectedHash,
+  ) async {
+    if (_installationDialogs.isRunning) return;
+    await _installationDialogs.run(
+      (task) async {
+        var target = WindowsPortableUpdater.currentDirectory;
+        try {
+          await WindowsPortableUpdater.checkTarget(target);
+        } catch (_) {
+          final choose = await task.show<bool>(
+            builder: (context) => AlertDialog(
+              title: const Text('无法写入当前软件目录'),
+              content: const Text(
+                '请选择空目录或已有的同映目录。新版本将在所选位置运行，原目录会保留，请同步调整原快捷方式。设置和历史不受影响。',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () =>
+                      KazumiDialog.dismiss(context: context, popWith: false),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      KazumiDialog.dismiss(context: context, popWith: true),
+                  child: const Text('选择目录'),
+                ),
+              ],
+            ),
+          );
+          if (!choose) return;
+          final selected = await task.wait(
+            FilePicker.platform.getDirectoryPath(dialogTitle: '选择同映程序目录'),
+          );
+          if (selected == null || selected.isEmpty) return;
+          target = selected;
+        }
+        final prepared = await task.loading(
+          message: '正在校验和准备更新，完成后软件会自动重启…',
+          action: () => WindowsPortableUpdater.prepare(
+            archivePath: archivePath,
+            expectedHash: expectedHash,
+            targetDirectory: target,
+          ),
+        );
+        await prepared.requestInstall();
+        exit(0);
+      },
+      onError: (error, _) {
+        KazumiLogger().e(
+          'Update: portable update preparation failed',
+          error: error,
+        );
+        KazumiDialog.show(
+          builder: (context) => AlertDialog(
+            title: const Text('未能开始更新'),
+            content: Text('$error\n\n当前软件仍可使用，也可以手动解压更新包覆盖程序目录。'),
+            actions: [
+              TextButton(
+                onPressed: () => _revealInFileManager(archivePath),
+                child: const Text('打开更新包位置'),
+              ),
+              TextButton(
+                onPressed: () => KazumiDialog.dismiss(context: context),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _revealInFileManager(String filePath) async {

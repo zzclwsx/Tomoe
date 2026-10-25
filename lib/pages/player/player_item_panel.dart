@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:canvas_danmaku/models/danmaku_content_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/play_pause_icon.dart';
 import 'package:kazumi/pages/player/player_adjustment_hud.dart';
@@ -99,8 +98,6 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
   final TextEditingController textController = TextEditingController();
   final FocusNode textFieldFocus = FocusNode();
 
-  String? _cachedDanmakuColorHex;
-  late Widget _cachedDanmakuOnIcon;
   late final Widget _cachedDanmakuOffIcon;
   late final Widget _cachedDanmakuSettingsIcon;
 
@@ -298,41 +295,15 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
       begin: const Offset(1, 0),
       end: Offset.zero,
     ));
-    _cachedDanmakuOffIcon = RepaintBoundary(
-      child: SvgPicture.asset(
-        'assets/images/danmaku_off.svg',
-        height: _danmakuIconSize,
-      ),
-    );
-
-    _cachedDanmakuSettingsIcon = RepaintBoundary(
-      child: SvgPicture.asset(
-        'assets/images/danmaku_setting.svg',
-        height: _danmakuIconSize,
-      ),
-    );
+    _cachedDanmakuOffIcon = const Icon(Icons.subtitles_off_outlined,
+        color: Colors.white, size: _danmakuIconSize);
+    _cachedDanmakuSettingsIcon = const Icon(Icons.tune_rounded,
+        color: Colors.white, size: _danmakuIconSize);
   }
 
   Widget _danmakuOnIcon(BuildContext context) {
-    final colorHex = Theme.of(context)
-        .colorScheme
-        .primary
-        .toARGB32()
-        .toRadixString(16)
-        .substring(2);
-
-    if (_cachedDanmakuColorHex != colorHex) {
-      _cachedDanmakuColorHex = colorHex;
-      final svgString = danmakuOnSvg.replaceFirst('00AEEC', colorHex);
-      _cachedDanmakuOnIcon = RepaintBoundary(
-        child: SvgPicture.string(
-          svgString,
-          height: _danmakuIconSize,
-        ),
-      );
-    }
-
-    return _cachedDanmakuOnIcon;
+    return Icon(Icons.subtitles_rounded,
+        color: Theme.of(context).colorScheme.primary, size: _danmakuIconSize);
   }
 
   Widget _buildDanmakuToggleButton(BuildContext context) {
@@ -362,11 +333,8 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
       child: GestureDetector(
         onLongPress: _showForwardChange,
         child: IconButton(
-          icon: Image.asset(
-            'assets/images/forward_80.png',
-            color: Colors.white,
-            height: 24,
-          ),
+          icon: const Icon(Icons.fast_forward_rounded,
+              color: Colors.white, size: 24),
           onPressed: widget.skipOP,
         ),
       ),

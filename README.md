@@ -1,5 +1,7 @@
 # 同映 Tomoe
 
+<img src="assets/images/logo/logo_rounded.png" width="112" alt="同映双画面标识">
+
 **基于 [Predidit/Kazumi](https://github.com/Predidit/Kazumi) 的非官方个人衍生版。**
 
 首先感谢 **Predidit** 与 **Kazumi 的所有贡献者** 开放和维护这个项目。
@@ -42,12 +44,17 @@ API 检查通过也可能因站点变化而失败，欢迎附上规则名称、�
 
 [同映 Releases](https://github.com/zzclwsx/Tomoe/releases) · [问题反馈](https://github.com/zzclwsx/Tomoe/issues)
 
-- Windows：首期提供 x64 便携 ZIP，解压后运行 `tomoe.exe`；更新器下载后打开 ZIP，由使用者解压替换。
+- Windows：提供 x64 便携 ZIP，首次解压到自选目录后运行 `tomoe.exe`。从 1.0.2 起，内置更新器支持校验后原地替换并重启。
 - Android：发布工作流支持 APK，在配置本仓库自己的固定签名后启用。
 - 其他平台工程继承自上游，尚未完成本分支的发布验证。
 
 应用名称、安装标识和 Windows 数据目录与原作区分。已有 Kazumi 数据请先在原应用导出，再按需导入同映。
 本分支不会自动移动原作的数据。开发测试仍支持 `KAZUMI_TEST_INSTANCE` 隔离实例。
+
+**1.0.0 / 1.0.1 用户需要先手动解压覆盖到 1.0.2 一次**，以后才会使用新的原地更新流程。
+程序原来放在 D 盘，后续仍更新到原目录；当前目录不可写时可选择空目录或已有同映目录。
+设置与历史保留在原应用数据目录，番剧下载路径也不会因更新而改变。
+详见 [Windows 更新说明](static/doc/WINDOWS_UPDATE.md)。
 
 ## 从源码运行
 
@@ -80,8 +87,10 @@ flutter build windows --release
 ## 致谢与许可证
 
 再次感谢 Predidit、Kazumi 贡献者及其依赖项目的作者。
-当前沿用的 Kazumi 图标来源与原有第三方致谢保留在应用“关于 → 致谢”页面；
-使用这些资源不表示本分支具有官方身份。
+从 1.0.2 起，本分支使用独立绘制的薄荷绿“双画面”标识（MIT）、Material Icons（Apache 2.0）
+及 Noto Sans SC（SIL OFL 1.1）。不再打包 Kazumi 的人物图标及其平台衍生图片，
+对原项目图标作者的历史致谢保留，并明确区分于本分支现用素材。
+来源、许可、替换范围及可复现生成方式见[素材清单](static/doc/ASSET_PROVENANCE.md)。
 
 本项目继续使用 [GNU GPL v3](LICENSE)。分发本分支时，请保留原有署名、许可证与变更说明，
 提供对应版本的完整源码，并尊重接收者在许可证下修改和再分发的权利。

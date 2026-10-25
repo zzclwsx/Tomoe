@@ -46,15 +46,13 @@ class NetworkImgLayer extends StatelessWidget {
     final heroContext = flightDirection == HeroFlightDirection.push
         ? fromHeroContext
         : toHeroContext;
-    final hero =
-        flightDirection == HeroFlightDirection.push ? fromHero : toHero;
+    final hero = flightDirection == HeroFlightDirection.push
+        ? fromHero
+        : toHero;
 
     return InheritedTheme.captureAll(
       heroContext,
-      Material(
-        type: MaterialType.transparency,
-        child: hero.child,
-      ),
+      Material(type: MaterialType.transparency, child: hero.child),
     );
   }
 
@@ -139,23 +137,22 @@ class NetworkImgLayer extends StatelessWidget {
       height: height,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .onInverseSurface
-            .withValues(alpha: 0.4),
+        color: Theme.of(
+          context,
+        ).colorScheme.onInverseSurface.withValues(alpha: 0.4),
         borderRadius: _borderRadius,
       ),
       child: type == 'bg'
           ? const SizedBox()
           : Center(
-              child: Image.asset(
+              child: Icon(
                 type == 'avatar'
-                    ? 'assets/images/noface.jpeg'
-                    : 'assets/images/loading.png',
-                width: width,
-                height: height,
-                cacheWidth: width.cacheSize(context),
-                cacheHeight: height.cacheSize(context),
+                    ? Icons.person_outline_rounded
+                    : Icons.movie_outlined,
+                size: type == 'avatar' ? 28 : 40,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
               ),
             ),
     );

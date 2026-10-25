@@ -1,11 +1,11 @@
 {
-    "name": "kazumi",
-    "short_name": "kazumi",
+    "name": "同映 Tomoe",
+    "short_name": "Tomoe",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#e5f0e2",
+    "theme_color": "#426b50",
+    "description": "同映 Tomoe：基于 Kazumi 的非官方个人衍生版。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

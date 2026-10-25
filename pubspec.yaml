@@ -1,7 +1,7 @@
 name: kazumi
 description: "同映 Tomoe：基于 Predidit/Kazumi 的非官方个人衍生版。"
 publish_to: "none"
-version: 1.0.1+10001
+version: 1.0.2+10002
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -126,7 +126,7 @@ flutter_launcher_icons:
   image_path: assets/images/logo/logo_android.png
   image_path_android: assets/images/logo/logo_android.png
   image_path_ios: assets/images/logo/logo_ios.png
-  adaptive_icon_background: "#ffffff"
+  adaptive_icon_background: "#e5f0e2"
   adaptive_icon_foreground: assets/images/logo/logo_android.png
   adaptive_icon_monochrome: assets/images/logo/logo_android.png
   macos:
@@ -157,13 +157,16 @@ msix_config:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/
+    - assets/update/
     - assets/plugins/
     - assets/shaders/
     - assets/images/logo/
     - assets/statements/
     - licenses/ech_http/
+    - licenses/fonts/
+    - licenses/material-icons/
+    - licenses/tomoe-art/
   fonts:
-    - family: MI_Sans_Regular
+    - family: NotoSansSC
       fonts:
-        - asset: assets/fonts/MiSans-Regular.ttf
+        - asset: assets/fonts/NotoSansSC.ttf

@@ -30,9 +30,34 @@ class CreditsPage extends StatelessWidget {
             ),
             AboutLinkTile(
               icon: Icons.brush_rounded,
-              title: '图标作者',
-              subtitle: 'Pixiv',
+              title: 'Yuquanaaa · 原项目图标作者',
+              subtitle: '本分支已替换该素材；此处仅保留对原项目贡献的致谢',
               url: ApiEndpoints.iconUrl,
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        ContentSection.group(
+          title: '视觉素材',
+          children: const [
+            AboutLinkTile(
+              icon: Icons.filter_frames_rounded,
+              title: '同映 · 双画面标识',
+              subtitle: '本分支独立绘制的几何 SVG 与平台图标，MIT 许可',
+              url:
+                  '${AppDistribution.sourceUrl}/blob/main/static/doc/ASSET_PROVENANCE.md',
+            ),
+            AboutLinkTile(
+              icon: Icons.font_download_outlined,
+              title: 'Noto Sans SC',
+              subtitle: 'Google Fonts · SIL Open Font License 1.1',
+              url: 'https://github.com/google/fonts/tree/main/ofl/notosanssc',
+            ),
+            AboutLinkTile(
+              icon: Icons.interests_outlined,
+              title: 'Material Icons',
+              subtitle: 'Google · Apache 2.0',
+              url: 'https://github.com/google/material-design-icons',
             ),
           ],
         ),

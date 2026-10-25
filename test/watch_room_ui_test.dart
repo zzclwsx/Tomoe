@@ -45,8 +45,8 @@ class _PreviewRoom extends WatchRoomService {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
-    final loader = FontLoader('MI_Sans_Regular')
-      ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.ttf'));
+    final loader = FontLoader('NotoSansSC')
+      ..addFont(rootBundle.load('assets/fonts/NotoSansSC.ttf'));
     await loader.load();
     await (FontLoader(
       'MaterialIcons',
@@ -71,7 +71,7 @@ void main() {
               debugShowCheckedModeBanner: false,
               theme: ThemeData(
                 useMaterial3: true,
-                fontFamily: 'MI_Sans_Regular',
+                fontFamily: 'NotoSansSC',
                 colorSchemeSeed: Colors.green,
                 brightness: brightness,
               ),
