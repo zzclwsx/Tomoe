@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
+import 'package:kazumi/request/core/danmaku_service_exception.dart';
 import 'package:flutter/services.dart';
 import 'package:kazumi/bean/dialog/adaptive_bottom_sheet.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
@@ -171,7 +172,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = '搜索失败';
+        _error = danmakuFailureMessage(error);
       });
     }
   }
@@ -201,7 +202,7 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = '分集加载失败';
+        _error = danmakuFailureMessage(error);
       });
     }
   }
@@ -218,10 +219,10 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       KazumiDialog.showToast(
         message: hasDanmakus ? '已切换弹幕源' : '暂无弹幕',
       );
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() => _loading = false);
-      KazumiDialog.showToast(message: '弹幕源切换失败');
+      KazumiDialog.showToast(message: danmakuFailureMessage(error));
     }
   }
 

@@ -268,7 +268,7 @@ class SettingsKeys {
     'ech',
     group: SettingGroup.proxy,
   );
-  // An unset mode inherits the old mirror switch (enabled by default).
+  // Legacy mirror preferences fall back to ECH when credentials are absent.
   static const bangumiAcceleration = SettingKey<String>(
     'bangumiAcceleration',
     '',

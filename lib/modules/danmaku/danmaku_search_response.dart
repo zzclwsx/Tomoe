@@ -27,13 +27,11 @@ class DanmakuSearchResponse {
   /// Result set was truncated; the user should narrow the keyword.
   final bool hasMore;
 
-  const DanmakuSearchResponse({
-    required this.animes,
-    required this.hasMore,
-  });
+  const DanmakuSearchResponse({required this.animes, required this.hasMore});
 
   factory DanmakuSearchResponse.fromJson(Map<String, dynamic> json) {
-    var list = json['animes'] as List;
+    final list = json['animes'];
+    if (list is! List) throw const FormatException('弹幕搜索响应缺少结果列表');
     return DanmakuSearchResponse(
       animes: list.map((i) => DanmakuSearchAnime.fromJson(i)).toList(),
       hasMore: json['hasMore'] ?? false,

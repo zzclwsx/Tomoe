@@ -13,12 +13,17 @@ import 'package:kazumi/services/network/bangumi_ech_resolver.dart';
 const _echRequestKey = 'bangumiEch';
 
 class BangumiAccelerationInterceptor extends Interceptor {
+  BangumiAccelerationInterceptor({BangumiAcceleration Function()? mode})
+    : _mode = mode ?? (() => BangumiAcceleration.current);
+
+  final BangumiAcceleration Function() _mode;
+
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     options.extra.remove(_echRequestKey);
     final uri = options.uri;
     if (ApiEndpoints.bangumiPublicApiHosts.contains(uri.host)) {
-      switch (BangumiAcceleration.current) {
+      switch (_mode()) {
         case BangumiAcceleration.direct:
           break;
         case BangumiAcceleration.ech:

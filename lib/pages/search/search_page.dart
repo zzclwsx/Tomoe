@@ -11,6 +11,7 @@ import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
+import 'package:kazumi/bean/widget/bangumi_mirror_error_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/pages/search/search_controller.dart';
@@ -310,6 +311,15 @@ class _SearchPageState extends State<SearchPage> {
       )),
       if (busy && allItems.isEmpty)
         const SliverToBoxAdapter(child: _SearchLoadingState())
+      else if (failed && allItems.isEmpty)
+        SliverToBoxAdapter(
+          child: BangumiMirrorErrorWidget(
+            onRetry: () => _submit(_submittedQuery!),
+            onSettingsReturned: () {
+              if (mounted && _submittedQuery != null) _submit(_submittedQuery!);
+            },
+          ),
+        )
       else if (allItems.isEmpty)
         const SliverToBoxAdapter(
           child: GeneralEmptyState(

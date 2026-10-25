@@ -4,6 +4,7 @@ import 'package:canvas_danmaku/canvas_danmaku.dart' as canvas;
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/request/core/danmaku_service_exception.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:mobx/mobx.dart';
@@ -25,6 +26,7 @@ class DanmakuLoadResult {
     required this.danmakus,
     required this.bangumiID,
     required this.status,
+    this.errorMessage,
   });
 
   factory DanmakuLoadResult.success({
@@ -42,17 +44,20 @@ class DanmakuLoadResult {
 
   factory DanmakuLoadResult.failed({
     required int bangumiID,
+    String? errorMessage,
   }) {
     return DanmakuLoadResult(
       danmakus: const [],
       bangumiID: bangumiID,
       status: DanmakuLoadStatus.failed,
+      errorMessage: errorMessage,
     );
   }
 
   final List<DanmakuEntry> danmakus;
   final int bangumiID;
   final DanmakuLoadStatus status;
+  final String? errorMessage;
 
   bool get hasDanmakus => status == DanmakuLoadStatus.success;
 
@@ -230,7 +235,10 @@ abstract class _PlayerDanmakuController with Store {
           KazumiLogger().w(
               'PlayerController: failed to fetch danmaku online (may be offline)',
               error: e);
-          return DanmakuLoadResult.failed(bangumiID: nextBangumiID);
+          return DanmakuLoadResult.failed(
+            bangumiID: nextBangumiID,
+            errorMessage: danmakuFailureMessage(e),
+          );
         }
       }
     } catch (e) {
@@ -290,8 +298,11 @@ abstract class _PlayerDanmakuController with Store {
       KazumiLogger().w(
           'PlayerController: failed to get danmaku [BgmBangumiID] $bgmBangumiID',
           error: e);
+      return DanmakuLoadResult.failed(
+        bangumiID: nextBangumiID,
+        errorMessage: danmakuFailureMessage(e),
+      );
     }
-    return DanmakuLoadResult.failed(bangumiID: nextBangumiID);
   }
 
   @action

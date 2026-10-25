@@ -96,6 +96,7 @@ void main() {
         expect(tester.takeException(), isNull);
         if (size.width == 900) {
           expect(find.text('跟随播放').hitTestable(), findsOneWidget);
+          expect(find.text('同步房间进度').hitTestable(), findsOneWidget);
         }
         if (size.width == 900) {
           await tester.runAsync(() async {

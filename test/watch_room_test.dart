@@ -163,6 +163,111 @@ void main() {
       guest.dispose();
       await server.close();
     });
+    Future<void> playingRoom(
+      WatchRoomMode mode, {
+      Future<void> Function(RoomTimeline, bool)? apply,
+      bool Function()? ready,
+      Future<void> Function(RoomTimeline, bool)? hostApply,
+    }) async {
+      await host.create('12345678', 'Host', mode);
+      await guest.join(host.room, 'Guest');
+      await eventually(() => guest.snapshot != null);
+      host.attach(binding(apply: hostApply));
+      guest.attach(binding(apply: apply, ready: ready));
+      await host.select(content('sync'));
+      await eventually(() => guest.snapshot?.content?.id == 'sync');
+      await host.publish(position: 120, paused: false, doSeek: true);
+      await eventually(() => guest.timeline?.position == 120);
+    }
+
+    test(
+      'heartbeats update reference time without seeking; controls apply once and skip own echo',
+      () async {
+        final applied = <double>[];
+        var ownApplies = 0;
+        await playingRoom(
+          WatchRoomMode.everyone,
+          apply: (state, _) async {
+            applied.add(state.target);
+          },
+          hostApply: (_, _) async {
+            ownApplies++;
+          },
+        );
+        await eventually(() => applied.isNotEmpty);
+        final count = applied.length;
+        server.states[host.room] = (
+          position: 700,
+          paused: false,
+          actor: 'Host',
+        );
+        for (var i = 0; i < 4; i++) {
+          server.sendState(host.room);
+        }
+        await eventually(() => guest.timeline?.position == 700);
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(applied.length, count);
+        expect(ownApplies, 0);
+        await host.publish(position: 250, paused: true);
+        await eventually(() => applied.length == count + 1);
+        expect(applied.last, 250);
+        server.sendState(host.room);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(applied.length, count + 1);
+        await host.publish(position: 250, paused: false);
+        await eventually(() => applied.length == count + 2);
+        expect(ownApplies, 0);
+      },
+    );
+    test(
+      'controller manual sync broadcasts a seek; host-only guest aligns locally with elapsed compensation',
+      () async {
+        final applied = <double>[];
+        await playingRoom(
+          WatchRoomMode.hostOnly,
+          apply: (state, _) async {
+            applied.add(state.target);
+          },
+        );
+        await eventually(() => applied.isNotEmpty);
+        var count = applied.length;
+        final before = server.controls;
+        await host.syncProgressNow();
+        await eventually(
+          () => server.controls == before + 1 && applied.length > count,
+        );
+        count = applied.length;
+        final guestBefore = server.controls;
+        await Future<void>.delayed(const Duration(milliseconds: 70));
+        await guest.syncProgressNow();
+        expect(applied.length, count + 1);
+        expect(applied.last, greaterThan(120.05));
+        expect(server.controls, guestBefore);
+      },
+    );
+    test(
+      'buffering queues only explicit operation and heartbeats do not cancel it',
+      () async {
+        var ready = false;
+        final applied = <double>[];
+        await playingRoom(
+          WatchRoomMode.everyone,
+          ready: () => ready,
+          apply: (state, _) async {
+            applied.add(state.target);
+          },
+        );
+        server.sendState(host.room);
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(applied, isEmpty);
+        ready = true;
+        await eventually(() => applied.isNotEmpty);
+        expect(applied.single, greaterThan(120.05));
+        server.sendState(host.room);
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(applied.length, 1);
+      },
+    );
     test(
       'API 9 raw IDs and detail templates survive TCP selection broadcasts',
       () async {

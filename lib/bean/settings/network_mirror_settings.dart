@@ -47,7 +47,7 @@ class _NetworkMirrorSettingsState extends State<NetworkMirrorSettings> {
             context,
             title: '番剧条目加速',
             current: bangumiAcceleration,
-            modes: BangumiAcceleration.values,
+            modes: BangumiAcceleration.availableModes,
             label: (mode) => mode.label,
             description: (mode) => mode.description,
             setting: SettingsKeys.bangumiAcceleration,
@@ -132,8 +132,8 @@ class _NetworkMirrorSettingsState extends State<NetworkMirrorSettings> {
 extension on BangumiAcceleration {
   String get description => switch (this) {
     BangumiAcceleration.direct => '访问官方接口',
-    BangumiAcceleration.ech => '启用加密握手',
-    BangumiAcceleration.mirror => '镜像接口（默认）',
+    BangumiAcceleration.ech => '访问官方接口，启用加密握手',
+    BangumiAcceleration.mirror => '访问已配置凭据的镜像接口',
   };
 }
 

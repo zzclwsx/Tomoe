@@ -77,6 +77,7 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
   bool _migrating = false;
   Timer? _retry;
   Timer? _readyPoll;
+  Timer? _pendingApplyPoll;
   RoomPlaybackBinding? _announcedBinding;
   String? _announcedContent;
   bool _snapshotReceived = false;
@@ -90,6 +91,7 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
   String newContentId() =>
       '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-${_random.nextInt(1 << 30).toRadixString(36)}';
   int get playbackRevision => _selection;
+  int get synchronizationRevision => _applyVersion;
   String get username => client?.username ?? _requestedUser;
   bool get isHost => _ownerPassword != null && snapshot?.host == username;
   bool get canControl =>
@@ -180,6 +182,7 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
           }
           _waitingForReset = null;
         }
+        final previousPaused = timeline?.paused;
         timeline = RoomTimeline(
           position: (message['calculatedPositon'] as num).toDouble(),
           paused: message['paused'] == true,
@@ -187,7 +190,13 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
         );
         _lastActor = message['setBy'] as String?;
         // Detached/loading clients echo the room clock, never a stopped local player.
-        _applyTimeline(message['doSeek'] == true);
+        final isControl =
+            message['doSeek'] == true ||
+            previousPaused == null ||
+            previousPaused != timeline!.paused;
+        // Periodic State frames keep a fresh compensated clock for manual
+        // alignment. They must never pull an independently playing user back.
+        if (isControl && _lastActor != username) _applyTimeline(true);
         _changed();
       }),
     );
@@ -382,6 +391,7 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
     if (!identical(binding, value)) return;
     binding = null;
     _readyPoll?.cancel();
+    _pendingApplyPoll?.cancel();
     ++_applyVersion;
     ++_selection;
     final state = timeline;
@@ -495,11 +505,45 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
     // Followers report their compensated room clock; buffering must not drag others back.
     if (canControl && (_lastActor == username || timeline == null)) {
       client!.setPosition(local.position());
-      client!.setPaused(!local.playing());
+      // Local buffering/lifecycle pauses are not room playback operations.
     }
   }
 
   String? _lastActor;
+
+  bool get canSyncProgress {
+    final local = binding;
+    return connected &&
+        local != null &&
+        local.following &&
+        local.ready() &&
+        snapshot?.content != null &&
+        local.contentId == snapshot!.content!.id;
+  }
+
+  Future<void> syncProgressNow() async {
+    if (!canSyncProgress) {
+      reportError('请先跟随房间播放，并等待播放器就绪');
+      return;
+    }
+    error = null;
+    if (canControl) {
+      final local = binding!;
+      await publish(
+        position: local.position(),
+        paused: !local.playing(),
+        doSeek: true,
+      );
+    } else if (timeline?.contentId == binding!.contentId) {
+      // A guest in host-only mode aligns only this player, without taking over.
+      _applyTimeline(true);
+      await _applyTail;
+    } else {
+      reportError('尚未收到房间进度，请稍后重试');
+    }
+    _changed();
+  }
+
   Future<void> publish({
     required double position,
     required bool paused,
@@ -524,6 +568,8 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
         local?.contentId != snapshot?.content?.id) {
       return;
     }
+    ++_applyVersion;
+    _pendingApplyPoll?.cancel();
     _lastActor = username;
     timeline = RoomTimeline(
       position: position,
@@ -540,29 +586,47 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
   }
 
   void _applyTimeline(bool force) {
+    final version = ++_applyVersion;
+    _pendingApplyPoll?.cancel();
     if (_migrating) return;
     final local = binding;
     final state = timeline;
     if (local == null ||
         state == null ||
         !local.following ||
-        !local.ready() ||
         local.contentId != state.contentId) {
       return;
     }
-    final version = ++_applyVersion;
-    _applyTail = _applyTail
-        .then((_) async {
-          if (version != _applyVersion ||
-              !identical(binding, local) ||
-              !local.ready()) {
-            return;
-          }
-          await local.apply(state, force);
-        })
-        .catchError((Object e) {
-          reportError(e);
-        });
+    void applyWhenReady() {
+      if (version != _applyVersion ||
+          !identical(binding, local) ||
+          !local.following ||
+          local.contentId != state.contentId) {
+        return;
+      }
+      if (!local.ready()) {
+        // Only an explicit operation is pending; a heartbeat never starts this.
+        _pendingApplyPoll = Timer(
+          const Duration(milliseconds: 50),
+          applyWhenReady,
+        );
+        return;
+      }
+      _applyTail = _applyTail
+          .then((_) async {
+            if (version != _applyVersion || !identical(binding, local)) return;
+            if (!local.ready()) {
+              applyWhenReady();
+              return;
+            }
+            await local.apply(state, force);
+          })
+          .catchError((Object e) {
+            reportError(e);
+          });
+    }
+
+    applyWhenReady();
   }
 
   Future<void> sendChatMessage(String text) async {
@@ -679,6 +743,7 @@ class WatchRoomService extends ChangeNotifier implements Disposable {
   Future<void> _closeConnection() async {
     _pendingLocalContentId = null;
     _readyPoll?.cancel();
+    _pendingApplyPoll?.cancel();
     _announcedBinding = null;
     _announcedContent = null;
     ++_connection;

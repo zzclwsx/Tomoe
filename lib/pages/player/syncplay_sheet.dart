@@ -363,16 +363,51 @@ class _SyncPlayHomeSheet extends StatelessWidget {
               if (service.snapshot?.content != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.tonalIcon(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        service.follow();
-                      },
-                      icon: const Icon(Icons.play_arrow_rounded),
-                      label: const Text('跟随播放'),
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final follow = FilledButton.tonalIcon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              service.follow();
+                            },
+                            icon: const Icon(Icons.play_arrow_rounded),
+                            label: const Text('跟随播放'),
+                          );
+                          final sync = OutlinedButton.icon(
+                            onPressed: service.canSyncProgress
+                                ? service.syncProgressNow
+                                : null,
+                            icon: const Icon(Icons.sync_rounded),
+                            label: Text(
+                              service.canControl ? '同步房间进度' : '对齐房间进度',
+                            ),
+                          );
+                          if (constraints.maxWidth >= 400 &&
+                              MediaQuery.textScalerOf(context).scale(14) <=
+                                  18) {
+                            return Row(
+                              children: [
+                                Expanded(child: follow),
+                                const SizedBox(width: 8),
+                                Expanded(child: sync),
+                              ],
+                            );
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [follow, const SizedBox(height: 8), sync],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '平时独立播放，操作或手动同步时对齐进度',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
                   ),
                 ),
             ],

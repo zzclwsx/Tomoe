@@ -109,16 +109,15 @@ class _VideoPageState extends State<VideoPage>
             _roomBinding.contentId != timeline.contentId) {
           return;
         }
+        final revision = _room.synchronizationRevision;
         final target = Duration(milliseconds: (timeline.target * 1000).round());
-        final difference = (playerController.playback.playerPosition - target)
-            .abs();
-        if (forceSeek || difference > const Duration(milliseconds: 800)) {
+        if (forceSeek) {
           await playerController.seek(target, enableSync: false);
         }
         if (!mounted ||
             _isExiting ||
             _roomBinding.contentId != timeline.contentId ||
-            !identical(_room.timeline, timeline)) {
+            revision != _room.synchronizationRevision) {
           return;
         }
         if (timeline.paused) {

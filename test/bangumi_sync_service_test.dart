@@ -13,6 +13,7 @@ import 'package:kazumi/request/core/dio_factory.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/sync/bangumi_sync_service.dart';
+import 'package:kazumi/utils/bangumi_mirror_credentials.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
@@ -82,7 +83,7 @@ void main() {
     expect(GStorage.getSetting(SettingsKeys.bangumiSyncEnable), isTrue);
   });
 
-  test('ECH image acceleration preserves Bangumi API mirror routing', () async {
+  test('ECH image acceleration preserves credential-aware API routing', () async {
     final previousMode = GStorage.getSetting<String>(
       SettingsKeys.imageAcceleration,
     );
@@ -98,8 +99,12 @@ void main() {
       await BangumiClient.instance.get(url);
       expect(
         adapter.requests.last.uri,
-        Uri.parse(url).replace(host: 'api.kazumi.fyi'),
+        hasBangumiMirrorCredentials
+            ? Uri.parse(url).replace(host: 'api.kazumi.fyi')
+            : Uri.parse(url),
       );
+      expect(adapter.requests.last.extra['bangumiEch'],
+          hasBangumiMirrorCredentials ? isNull : isTrue);
     }
   });
 
