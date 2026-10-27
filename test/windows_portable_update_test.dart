@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kazumi/services/update/windows_portable_updater.dart';
+import 'package:kazumi/services/update/windows_update_helper.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -222,6 +223,95 @@ void main() {
         );
       },
     );
+    test(
+      'the production launcher survives the application process exiting',
+      () async {
+        await zip();
+        final script = File(p.join(workspace.path, 'update.ps1'));
+        await script.writeAsString(
+          '\uFEFF${await File('assets/update/windows_update.ps1').readAsString()}',
+        );
+        await File(p.join(workspace.path, 'config.json')).writeAsString(
+          jsonEncode({
+            'archivePath': archive.path,
+            'expectedHash': sha256
+                .convert(await archive.readAsBytes())
+                .toString(),
+            'targetDirectory': target.path,
+            'parentPid': 0,
+            'originalExecutable': originalExecutable,
+            'restart': true,
+            'showError': false,
+          }),
+        );
+        final dart = p.normalize(
+          p.join(
+            p.dirname(Platform.resolvedExecutable),
+            '..',
+            '..',
+            '..',
+            'dart-sdk',
+            'bin',
+            'dart.exe',
+          ),
+        );
+        expect(await File(dart).exists(), isTrue, reason: dart);
+        final app = await Process.start(dart, [
+          '--packages=${p.absolute('.dart_tool/package_config.json')}',
+          p.absolute('test/support/windows_update_parent.dart'),
+          workspace.path,
+          WindowsPortableUpdater.powershell,
+        ]);
+        final stdout = app.stdout.transform(utf8.decoder).join();
+        final stderr = app.stderr.transform(utf8.decoder).join();
+        final code = await app.exitCode.timeout(const Duration(seconds: 30));
+        expect(code, 0, reason: '${await stdout}\n${await stderr}');
+        await eventually(() async => (await state())?['state'] == 'success');
+        expect(
+          await File(p.join(target.path, 'data', 'app.so')).readAsString(),
+          'new application',
+        );
+        expect(
+          await File(p.join(target.path, 'started.txt')).readAsString(),
+          target.path,
+        );
+        expect(
+          await File(p.join(target.path, 'personal-note.txt')).readAsString(),
+          'keep me',
+        );
+        await Future<void>.delayed(const Duration(seconds: 3));
+      },
+    );
+    test('reports a helper that exits before writing a status', () async {
+      await File(
+        p.join(workspace.path, 'update.ps1'),
+      ).writeAsString('this is not valid {{{');
+      await File(p.join(workspace.path, 'config.json')).writeAsString('{}');
+      final watch = Stopwatch()..start();
+      await expectLater(
+        startWindowsUpdateHelper(
+          workspace: workspace,
+          powershell: WindowsPortableUpdater.powershell,
+          timeout: const Duration(seconds: 20),
+        ),
+        throwsA(
+          isA<PortableUpdateException>().having(
+            (e) => e.message,
+            'message',
+            contains('启动失败'),
+          ),
+        ),
+      );
+      expect(watch.elapsed, lessThan(const Duration(seconds: 20)));
+      expect(
+        await File(p.join(workspace.path, 'startup.log')).readAsString(),
+        contains('exit code'),
+      );
+      expect(
+        await File(p.join(target.path, 'data', 'app.so')).readAsString(),
+        'old application',
+      );
+    });
     test(
       'starts the updated application with the installation working directory',
       () async {

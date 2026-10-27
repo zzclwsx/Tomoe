@@ -1,13 +1,63 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kazumi/navigation.dart';
 import 'package:kazumi/request/config/app_distribution.dart';
 import 'package:kazumi/request/core/network_exception.dart';
 import 'package:kazumi/services/update/auto_updater.dart';
 import 'package:kazumi/utils/version.dart';
 
 void main() {
+  testWidgets(
+    'long release notes stay scrollable and keep update actions visible',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(900, 680));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final notes = List.generate(100, (index) => '更新说明 $index').join('\n');
+      final updater = AutoUpdater.withReleaseLoader(
+        (_, _) async => jsonEncode({
+          'tag_name': 'v999.0.0',
+          'body': notes,
+          'html_url': 'https://example.com/releases/v999.0.0',
+          'assets': [
+            {'name': 'Tomoe_windows_x64_v999.0.0.zip'},
+          ],
+        }),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: rootNavigatorKey,
+          home: const Scaffold(body: Text('首页')),
+        ),
+      );
+      await updater.manualCheckForUpdates();
+      await tester.pumpAndSettle();
+      expect(find.text('立即更新').hitTestable(), findsOneWidget);
+      expect(find.text('稍后提醒').hitTestable(), findsOneWidget);
+      final dialogSize = tester.getSize(
+        find
+            .descendant(
+              of: find.byType(AlertDialog),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(dialogSize.height, lessThan(680 * 0.8));
+      final scrollable = find
+          .ancestor(of: find.text(notes), matching: find.byType(Scrollable))
+          .first;
+      final position = tester.state<ScrollableState>(scrollable).position;
+      expect(position.maxScrollExtent, greaterThan(0));
+      await tester.drag(scrollable, const Offset(0, -100));
+      await tester.pumpAndSettle();
+      expect(position.pixels, greaterThan(0));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   test(
     'update checks use only this derivative and offer available packages',
     () async {

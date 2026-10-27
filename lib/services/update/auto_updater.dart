@@ -245,7 +245,14 @@ class AutoUpdater {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(updateInfo.description),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.25,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Text(updateInfo.description),
+                  ),
+                ),
                 if (updateInfo.publishedAt.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(

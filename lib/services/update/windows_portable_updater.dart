@@ -5,15 +5,11 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:kazumi/utils/crypto.dart';
 import 'package:kazumi/utils/file_system.dart';
+import 'package:kazumi/services/update/windows_update_helper.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-class PortableUpdateException implements Exception {
-  const PortableUpdateException(this.message);
-  final String message;
-  @override
-  String toString() => message;
-}
+export 'windows_update_helper.dart' show PortableUpdateException;
 
 class PreparedWindowsUpdate {
   PreparedWindowsUpdate._(this.workspace);
@@ -101,34 +97,10 @@ class WindowsPortableUpdater {
       }),
       flush: true,
     );
-    final helper = await Process.start(powershell, [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-WindowStyle',
-      'Hidden',
-      '-File',
-      script.path,
-      '-ConfigPath',
-      config.path,
-    ], mode: ProcessStartMode.detached);
-    final statusFile = File(p.join(workspace.path, 'status.json'));
-    final timer = Stopwatch()..start();
-    while (timer.elapsed < const Duration(seconds: 60)) {
-      if (await statusFile.exists()) {
-        final state = jsonDecode(await statusFile.readAsString()) as Map;
-        if (state['state'] == 'ready') {
-          return PreparedWindowsUpdate._(workspace);
-        }
-        throw PortableUpdateException(
-          '更新准备失败，软件未退出。请手动解压覆盖，或查看日志：${workspace.path}',
-        );
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    // No application exit occurs on preparation failure or timeout.
-    Process.killPid(helper.pid);
-    throw PortableUpdateException('更新准备超时，软件未退出。可手动解压覆盖。日志：${workspace.path}');
+    await startWindowsUpdateHelper(
+      workspace: workspace,
+      powershell: powershell,
+    );
+    return PreparedWindowsUpdate._(workspace);
   }
 }
